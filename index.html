@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="sl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Bana Brewery - sledenje proizvodnji</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Navigacija">
+        <div class="brand">
+          <img class="brand-mark" src="bana-brewery-logo.png" alt="Bana Brewery logo">
+          <div>
+            <h1>Bana Brewery</h1>
+            <p>zaloge, batchi, stroški</p>
+          </div>
+        </div>
+
+        <nav class="tabs" aria-label="Pogledi">
+          <button class="tab is-active" data-view="dashboard">Pregled</button>
+          <button class="tab" data-view="inventory">Zaloge</button>
+          <button class="tab" data-view="recipes">Recepti</button>
+          <button class="tab" data-view="batches">Batchi</button>
+          <button class="tab" data-view="purchases">Nabava</button>
+          <button class="tab" data-view="sales">Naročila</button>
+          <button class="tab" data-view="economics">Ekonomika</button>
+          <button class="tab" data-view="automation">Avtomatizacija</button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <button class="secondary full" id="seedDataBtn" type="button">Nalozi demo</button>
+          <button class="ghost full" id="resetDataBtn" type="button">Ponastavi</button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <section class="topbar">
+          <div>
+            <p class="eyebrow">Operativni center</p>
+            <h2 id="viewTitle">Pregled</h2>
+          </div>
+          <div class="topbar-actions">
+            <button class="secondary" id="exportBtn" type="button">Izvozi JSON</button>
+            <label class="secondary file-button">
+              Uvozi JSON
+              <input id="importInput" type="file" accept="application/json">
+            </label>
+          </div>
+        </section>
+
+        <section class="view is-active" id="dashboardView">
+          <div class="metric-grid" id="metrics"></div>
+          <div class="two-column">
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Opozorila zalog</h3>
+              </div>
+              <div id="stockAlerts" class="list"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Aktivni batchi</h3>
+              </div>
+              <div id="activeBatchList" class="list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="inventoryView">
+          <div class="split">
+            <div class="stack">
+              <form class="panel form-panel" id="ingredientForm">
+                <div class="panel-header">
+                  <h3>Dodaj sestavino</h3>
+                </div>
+                <label>
+                  Naziv
+                  <input name="name" required placeholder="Pilsner slad" list="ingredientNameSuggestions">
+                  <datalist id="ingredientNameSuggestions"></datalist>
+                </label>
+                <label>
+                  Tip
+                  <select name="type">
+                    <option>Slad</option>
+                    <option>Hmelj</option>
+                    <option>Kvas</option>
+                    <option>Dodatek</option>
+                  </select>
+                </label>
+                <div class="inline-fields">
+                  <label>
+                    Zaloga
+                    <input name="stock" type="number" step="0.01" min="0" required>
+                  </label>
+                  <label>
+                    Enota
+                    <select name="unit">
+                      <option value="kg">kg</option>
+                      <option value="g">g</option>
+                      <option value="pcs">kos</option>
+                      <option value="l">l</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="inline-fields">
+                  <label>
+                    Cena/enoto
+                    <input name="price" type="number" step="0.01" min="0" required>
+                  </label>
+                  <label>
+                    Min. zaloga
+                    <input name="minStock" type="number" step="0.01" min="0" required>
+                  </label>
+                </div>
+                <button class="primary" type="submit">Shrani sestavino</button>
+              </form>
+
+              <form class="panel form-panel" id="packagingForm">
+                <div class="panel-header">
+                  <h3>Dodaj embalažo</h3>
+                </div>
+                <label>
+                  Naziv
+                  <input name="name" required placeholder="Steklenica 330 ml">
+                </label>
+                <label>
+                  Tip embalaže
+                  <select name="type">
+                    <option>Steklenica</option>
+                    <option>Zamasek</option>
+                    <option>Nalepka</option>
+                    <option>Paket</option>
+                    <option>Drugo</option>
+                  </select>
+                </label>
+                <div class="inline-fields">
+                  <label>
+                    Zaloga
+                    <input name="stock" type="number" step="1" min="0" required>
+                  </label>
+                  <label>
+                    Cena/kos
+                    <input name="price" type="number" step="0.01" min="0" required>
+                  </label>
+                </div>
+                <label>
+                  Min. zaloga
+                  <input name="minStock" type="number" step="1" min="0" required>
+                </label>
+                <button class="primary" type="submit">Shrani embalažo</button>
+              </form>
+            </div>
+            <div class="stack">
+              <section class="panel table-panel">
+                <div class="panel-header">
+                  <h3>Zaloge sestavin</h3>
+                  <input id="inventorySearch" placeholder="Iskanje">
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Sestavina</th>
+                        <th>Tip</th>
+                        <th>Zaloga</th>
+                        <th>Cena</th>
+                        <th>Status</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="inventoryTable"></tbody>
+                  </table>
+                </div>
+              </section>
+              <section class="panel table-panel">
+                <div class="panel-header">
+                  <h3>Zaloge embalaže</h3>
+                  <input id="packagingSearch" placeholder="Iskanje">
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Embalaža</th>
+                        <th>Tip</th>
+                        <th>Zaloga</th>
+                        <th>Cena</th>
+                        <th>Status</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="packagingTable"></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="recipesView">
+          <div class="split">
+            <form class="panel form-panel" id="recipeForm">
+              <div class="panel-header">
+                <h3>Nov recept</h3>
+              </div>
+              <div class="import-box">
+                <div class="line-header">
+                  <strong>Uvoz iz Grainfather / BeerXML</strong>
+                  <label class="secondary file-button small">
+                    XML datoteka
+                    <input id="beerXmlInput" type="file" accept=".xml,.beerxml,text/xml,application/xml">
+                  </label>
+                </div>
+                <textarea id="beerXmlText" rows="4" placeholder="Prilepi BeerXML vsebino recepta"></textarea>
+                <button class="secondary full" id="importBeerXmlTextBtn" type="button">Uvozi prilepljen recept</button>
+                <p class="import-status" id="beerXmlStatus" aria-live="polite"></p>
+              </div>
+              <label>
+                Naziv piva
+                <input name="name" required placeholder="Session IPA">
+              </label>
+              <div class="inline-fields">
+                <label>
+                  Ciljni litri
+                  <input name="yieldLiters" type="number" step="1" min="1" required>
+                </label>
+                <label>
+                  ABV %
+                  <input name="abv" type="number" step="0.1" min="0">
+                </label>
+              </div>
+              <div class="inline-fields">
+                <label>
+                  Delovni cas (h)
+                  <input name="laborHours" type="number" step="0.25" min="0" value="6">
+                </label>
+                <label>
+                  Cena dela/h
+                  <input name="laborRate" type="number" step="0.01" min="0" value="18">
+                </label>
+              </div>
+              <label>
+                Rezijiski strosek
+                <input name="overhead" type="number" step="0.01" min="0" value="35">
+              </label>
+              <div class="recipe-lines">
+                <div class="line-header">
+                  <strong>Sestavine recepta</strong>
+                  <button class="secondary small" id="addRecipeLine" type="button">Dodaj vrstico</button>
+                </div>
+                <div id="recipeLineList"></div>
+              </div>
+              <button class="primary" type="submit">Shrani recept</button>
+            </form>
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Recepti in kalkulacije</h3>
+              </div>
+              <div id="recipeList" class="card-grid"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="batchesView">
+          <div class="split">
+            <form class="panel form-panel" id="batchForm">
+              <div class="panel-header">
+                <h3>Nov batch</h3>
+              </div>
+              <label>
+                Recept
+                <select name="recipeId" id="batchRecipeSelect" required></select>
+              </label>
+              <label>
+                Oznaka batcha
+                <input name="code" required placeholder="IPA-2026-001">
+              </label>
+              <div class="inline-fields">
+                <label>
+                  Litri
+                  <input name="liters" type="number" step="1" min="1" required>
+                </label>
+                <label>
+                  Status
+                  <select name="status">
+                    <option>Planiran</option>
+                    <option>Varjenje</option>
+                    <option>Fermentacija</option>
+                    <option>Hladno zorenje</option>
+                    <option>Pakiranje</option>
+                    <option>Zakljucen</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                Datum varjenja
+                <input name="brewDate" type="date" required>
+              </label>
+              <label>
+                Kolicine sestavin
+                <select name="scalingMode">
+                  <option value="scale">Skaliraj glede na izbrane litre</option>
+                  <option value="fixed">Uporabi enake kolicine kot v receptu</option>
+                </select>
+              </label>
+              <label class="checkbox-row">
+                <input name="consumeStock" type="checkbox" checked>
+                Avtomatsko odpisi zalogo ob kreiranju
+              </label>
+              <button class="primary" type="submit">Ustvari batch</button>
+            </form>
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Batchi</h3>
+              </div>
+              <div id="batchList" class="card-grid"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="salesView">
+          <div class="split">
+            <form class="panel form-panel" id="productForm">
+              <div class="panel-header">
+                <h3>Nov izdelek</h3>
+              </div>
+              <label>
+                Naziv izdelka
+                <input name="name" required placeholder="Bana IPA 330 ml">
+              </label>
+              <label>
+                Pivo / batch
+                <select name="batchId" id="productBatchSelect"></select>
+              </label>
+              <div class="inline-fields">
+                <label>
+                  Steklenica
+                  <select name="bottleItemId" id="productBottleSelect"></select>
+                </label>
+                <label>
+                  Količina piva (l)
+                  <input name="beerAmount" type="number" step="0.01" min="0.01" value="0.33">
+                </label>
+              </div>
+              <div class="inline-fields">
+                <label>
+                  Zamašek
+                  <select name="capItemId" id="productCapSelect"></select>
+                </label>
+                <label>
+                  Nalepka
+                  <select name="labelItemId" id="productLabelSelect"></select>
+                </label>
+              </div>
+              <label>
+                Razpoložljivo komadov
+                <input name="availableQty" type="number" step="1" min="0" required value="0">
+              </label>
+              <button class="primary" type="submit">Ustvari izdelek</button>
+            </form>
+            <form class="panel form-panel" id="orderForm">
+              <div class="panel-header">
+                <h3>Novo narocilo</h3>
+              </div>
+              <label>
+                Stranka
+                <input name="customer" required placeholder="Ime stranke">
+              </label>
+              <div class="inline-fields">
+                <label>
+                  Datum
+                  <input name="date" type="date" required>
+                </label>
+                <label>
+                  Marza %
+                  <input name="margin" inputmode="decimal" value="35">
+                </label>
+              </div>
+              <div class="recipe-lines">
+                <div class="line-header">
+                  <strong>Seznam narocila</strong>
+                  <button class="secondary small" id="addOrderLine" type="button">Dodaj postavko</button>
+                </div>
+                <div id="orderLineList"></div>
+              </div>
+              <button class="primary" type="submit">Shrani narocilo</button>
+            </form>
+            <form class="panel form-panel legacy-sales-form" id="salesForm">
+              <div class="panel-header">
+                <h3>Kalkulacija prodaje</h3>
+              </div>
+              <label>
+                Batch
+                <select name="batchId" id="salesBatchSelect"></select>
+              </label>
+              <div class="inline-fields">
+                <label>
+                  Steklenica (ml)
+                  <input name="bottleMl" type="number" step="10" min="1" value="330">
+                </label>
+                <label>
+                  Marza %
+                  <input name="margin" type="number" step="1" min="0" value="35">
+                </label>
+              </div>
+              <div class="inline-fields">
+                <label>
+                  Steklenica
+                  <select name="bottleItemId" id="salesBottleSelect"></select>
+                </label>
+                <label>
+                  Zamašek
+                  <select name="capItemId" id="salesCapSelect"></select>
+                </label>
+              </div>
+              <div class="inline-fields">
+                <label>
+                  Nalepka
+                  <select name="labelItemId" id="salesLabelSelect"></select>
+                </label>
+                <label>
+                  Vrsta embalaže paketa
+                  <select name="packageItemId" id="packageTypeSelect"></select>
+                </label>
+              </div>
+              <label>
+                Steklenic v paketu
+                <input name="bottlesPerPackage" type="number" step="1" min="1" value="4">
+              </label>
+              <div class="inline-fields">
+                <label>
+                  Prodajna cena steklenice
+                  <input name="manualBottlePrice" type="number" step="0.01" min="0" placeholder="samodejno">
+                </label>
+                <label>
+                  Prodajna cena paketa
+                  <input name="manualPackagePrice" type="number" step="0.01" min="0" placeholder="samodejno">
+                </label>
+              </div>
+            </form>
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Seznam izdelkov</h3>
+              </div>
+              <div id="productList" class="card-grid"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Seznam narocil</h3>
+              </div>
+              <div id="salesResult" class="sales-result"></div>
+              <div id="orderList" class="card-grid"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="economicsView">
+          <div class="two-column">
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Financni pregled</h3>
+              </div>
+              <div id="economicsMetrics" class="metric-grid"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Ekonomika batchev</h3>
+              </div>
+              <div id="batchEconomicsList" class="card-grid"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="purchasesView">
+          <div class="split">
+            <form class="panel form-panel" id="purchaseForm">
+              <div class="panel-header">
+                <h3>Nov račun / naročilo</h3>
+              </div>
+              <label>
+                Dobavitelj
+                <input name="supplier" required placeholder="Hopsi Shop">
+              </label>
+              <div class="inline-fields">
+                <label>
+                  Št. naročila / računa
+                  <input name="orderNo" required placeholder="57944">
+                </label>
+                <label>
+                  Datum
+                  <input name="date" type="date" required>
+                </label>
+              </div>
+              <label>
+                URL naročila
+                <input name="url" type="url" placeholder="https://hopsishop.com/my-account-2/view-order/57944/">
+              </label>
+              <div class="import-box">
+                <div class="line-header">
+                  <strong>Prilepi tekst računa</strong>
+                  <button class="secondary small" id="parsePurchaseTextBtn" type="button">Preberi postavke</button>
+                </div>
+                <textarea id="purchaseText" rows="6" placeholder="Motueka™ - 100g × 1&#10;Weyermann® CARAPILS® - 1kg × 1"></textarea>
+                <p class="import-status" id="purchaseTextStatus" aria-live="polite"></p>
+              </div>
+              <div class="recipe-lines">
+                <div class="line-header">
+                  <strong>Postavke nabave</strong>
+                  <button class="secondary small" id="addPurchaseLine" type="button">Dodaj postavko</button>
+                </div>
+                <div id="purchaseLineList"></div>
+              </div>
+              <button class="primary" type="submit">Shrani in posodobi zalogo</button>
+            </form>
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Zgodovina nabave</h3>
+              </div>
+              <div id="purchaseList" class="card-grid"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="automationView">
+          <div class="two-column">
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Avtomatski postopki</h3>
+              </div>
+              <div id="automationList" class="automation-list"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-header">
+                <h3>Proizvodni koledar</h3>
+              </div>
+              <div id="taskList" class="list"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <template id="recipeLineTemplate">
+      <div class="recipe-line">
+        <select class="line-type" aria-label="Tip sestavine"></select>
+        <input class="line-ingredient" placeholder="Naziv sestavine">
+        <input class="line-qty" type="number" step="0.01" min="0" placeholder="Kolicina">
+        <button class="ghost icon-btn line-remove" type="button" aria-label="Odstrani">X</button>
+      </div>
+    </template>
+
+    <template id="purchaseLineTemplate">
+      <div class="purchase-line">
+        <select class="purchase-kind" aria-label="Tip zaloge">
+          <option value="ingredient">Sestavina</option>
+          <option value="packaging">Embalaža</option>
+        </select>
+        <select class="purchase-type" aria-label="Tip"></select>
+        <input class="purchase-name" placeholder="Naziv">
+        <input class="purchase-qty" type="number" step="0.01" min="0" placeholder="Kolicina">
+        <select class="purchase-unit" aria-label="Enota">
+          <option value="kg">kg</option>
+          <option value="g">g</option>
+          <option value="pcs">kos</option>
+          <option value="l">l</option>
+        </select>
+        <input class="purchase-price" type="number" step="0.01" min="0" placeholder="Cena/enoto">
+        <button class="ghost icon-btn purchase-remove" type="button" aria-label="Odstrani">X</button>
+      </div>
+    </template>
+
+    <template id="orderLineTemplate">
+      <div class="order-line">
+        <select class="order-product" aria-label="Izdelek"></select>
+        <input class="order-product-qty" inputmode="numeric" placeholder="Kosov">
+        <select class="order-package" aria-label="Embalaza paketa"></select>
+        <input class="order-package-qty" inputmode="numeric" placeholder="Emb.">
+        <output class="order-suggested-price" aria-label="Predlagana cena paketa"></output>
+        <input class="order-price" inputmode="decimal" placeholder="Ponujena cena">
+        <button class="ghost icon-btn order-remove" type="button" aria-label="Odstrani">X</button>
+      </div>
+    </template>
+
+    <datalist id="purchaseIngredientSuggestions"></datalist>
+    <datalist id="purchasePackagingSuggestions"></datalist>
+
+    <script src="app.js"></script>
+  </body>
+</html>
