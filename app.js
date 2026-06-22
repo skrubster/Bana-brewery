@@ -61,6 +61,7 @@ let purchaseDraftLines = [];
 let orderDraftLines = [];
 let purchaseEditingId = null;
 let purchaseEditDraftLines = [];
+let productEditingId = null;
 
 const views = {
   dashboard: document.querySelector("#dashboardView"),
@@ -121,6 +122,7 @@ document.querySelector("#importBeerXmlTextBtn").addEventListener("click", import
 document.querySelector("#orderForm").addEventListener("keydown", preventOrderEnterSubmit);
 document.querySelector("#orderForm").margin.addEventListener("input", updateOrderSuggestedPrices);
 document.querySelector("#orderForm").margin.addEventListener("change", updateOrderSuggestedPrices);
+document.querySelector("#productTemplateSelect").addEventListener("change", (event) => applyProductTemplateToForm(event.target.value));
 
 renderAll();
 
@@ -1794,15 +1796,47 @@ function renderProductForm() {
   fillPackagingSelect("#productBottleSelect", "Steklenica", form.bottleItemId.value);
   fillPackagingSelect("#productCapSelect", "Zamasek", form.capItemId.value);
   fillPackagingSelect("#productLabelSelect", "Nalepka", form.labelItemId.value);
+  fillProductTemplateSelect();
 }
 
 function fillBatchSelect(selector, selectedId) {
   const select = document.querySelector(selector);
   if (!select) return;
-  select.innerHTML = state.batches.map((batch) => {
+  select.innerHTML = batchOptions(selectedId);
+}
+
+function batchOptions(selectedId) {
+  return state.batches.map((batch) => {
     const recipe = recipeById(batch.recipeId);
     return `<option value="${batch.id}" ${batch.id === selectedId ? "selected" : ""}>${batch.code} - ${recipe?.name ?? "Neznan recept"}</option>`;
   }).join("") || `<option value="">Ni batcha</option>`;
+}
+
+function packagingOptions(type, selectedId) {
+  return packagingByType(type).map((item) =>
+    `<option value="${item.id}" ${item.id === selectedId ? "selected" : ""}>${item.name}</option>`
+  ).join("") || `<option value="">Ni zaloge</option>`;
+}
+
+function fillProductTemplateSelect() {
+  const select = document.querySelector("#productTemplateSelect");
+  if (!select) return;
+  select.innerHTML = `<option value="">Prazen izdelek</option>` + activeProducts().map((product) =>
+    `<option value="${product.id}">${product.name}</option>`
+  ).join("");
+}
+
+function applyProductTemplateToForm(id) {
+  const product = state.products.find((item) => item.id === id);
+  const form = document.querySelector("#productForm");
+  if (!product || !form) return;
+  form.name.value = product.name;
+  form.batchId.value = product.batchId;
+  form.bottleItemId.value = product.bottleItemId;
+  form.beerAmount.value = productBeerLiters(product) || 0.33;
+  form.capItemId.value = product.capItemId;
+  form.labelItemId.value = product.labelItemId;
+  form.availableQty.value = 0;
 }
 
 function productCost(product) {
@@ -1840,19 +1874,7 @@ function parseDecimalInput(value) {
 function saveProduct(event) {
   event.preventDefault();
   const data = new FormData(event.currentTarget);
-  const beerAmount = Number(data.get("beerAmount") || data.get("beerMl")) || 0.33;
-  const beerLiters = beerAmount > 10 ? beerAmount / 1000 : beerAmount;
-  const product = {
-    id: uid("prd"),
-    name: data.get("name").trim(),
-    batchId: data.get("batchId"),
-    bottleItemId: data.get("bottleItemId"),
-    beerLiters,
-    beerMl: beerLiters * 1000,
-    capItemId: data.get("capItemId"),
-    labelItemId: data.get("labelItemId"),
-    availableQty: Number(data.get("availableQty")) || 0
-  };
+  const product = productFromFormData(data, uid("prd"));
   if (!hasEnoughPackagingForProduct(product)) {
     alert("Zaloga izbrane embalaze ne zadosca za ustvarjanje toliko izdelkov.");
     return;
@@ -1860,6 +1882,7 @@ function saveProduct(event) {
   adjustPackagingForProduct(product, -1);
   state.products.unshift(product);
   event.currentTarget.reset();
+  document.querySelector("#productTemplateSelect").value = "";
   event.currentTarget.beerAmount.value = 0.33;
   event.currentTarget.availableQty.value = 0;
   saveState();
@@ -1885,11 +1908,17 @@ function productPackagingDeltas(product) {
   ];
 }
 
+function activeProducts() {
+  return state.products.filter((product) => Number(product.availableQty || 0) > 0);
+}
+
 function renderProducts() {
   const list = document.querySelector("#productList");
   if (!list) return;
-  list.innerHTML = state.products.length
-    ? state.products.map((product) => {
+  const products = activeProducts();
+  list.innerHTML = products.length
+    ? products.map((product) => {
+      if (productEditingId === product.id) return renderProductEditCard(product);
       const cost = productCost(product);
       const recipe = recipeById(cost.batch?.recipeId);
       return `
@@ -1912,12 +1941,105 @@ function renderProducts() {
             </dl>
           </details>
           <div class="card-actions">
+            <button class="secondary small" type="button" onclick="editProduct('${product.id}')">Uredi</button>
             <button class="secondary small danger-action" type="button" onclick="deleteProduct('${product.id}')">Izbrisi</button>
           </div>
         </article>
       `;
     }).join("")
     : `<div class="empty">Ni ustvarjenih izdelkov.</div>`;
+}
+
+function renderProductEditCard(product) {
+  return `
+    <article class="card edit-card">
+      <form class="product-edit-form" onsubmit="saveProductEdit(event, '${product.id}')">
+        <div class="panel-header compact">
+          <h4>Uredi izdelek</h4>
+          <button class="secondary small" type="button" onclick="cancelProductEdit()">Preklici</button>
+        </div>
+        <div class="edit-grid">
+          <label>
+            Naziv izdelka
+            <input name="name" required value="${escapeAttribute(product.name)}">
+          </label>
+          <label>
+            Pivo / batch
+            <select name="batchId">${batchOptions(product.batchId)}</select>
+          </label>
+          <label>
+            Steklenica
+            <select name="bottleItemId">${packagingOptions("Steklenica", product.bottleItemId)}</select>
+          </label>
+          <label>
+            Kolicina piva (l)
+            <input name="beerAmount" inputmode="decimal" value="${productBeerLiters(product) || 0.33}">
+          </label>
+          <label>
+            Zamasek
+            <select name="capItemId">${packagingOptions("Zamasek", product.capItemId)}</select>
+          </label>
+          <label>
+            Nalepka
+            <select name="labelItemId">${packagingOptions("Nalepka", product.labelItemId)}</select>
+          </label>
+          <label>
+            Razpolozljivo komadov
+            <input name="availableQty" inputmode="numeric" value="${Number(product.availableQty) || 0}">
+          </label>
+        </div>
+        <div class="card-actions">
+          <button class="primary small" type="submit">Shrani spremembe</button>
+          <button class="secondary small" type="button" onclick="cancelProductEdit()">Preklici</button>
+        </div>
+      </form>
+    </article>
+  `;
+}
+
+function editProduct(id) {
+  productEditingId = id;
+  renderProducts();
+}
+
+function cancelProductEdit() {
+  productEditingId = null;
+  renderProducts();
+}
+
+function productFromFormData(data, id) {
+  const beerAmount = parseDecimalInput(data.get("beerAmount") || data.get("beerMl")) || 0.33;
+  const beerLiters = beerAmount > 10 ? beerAmount / 1000 : beerAmount;
+  return {
+    id,
+    name: data.get("name").trim(),
+    batchId: data.get("batchId"),
+    bottleItemId: data.get("bottleItemId"),
+    beerLiters,
+    beerMl: beerLiters * 1000,
+    capItemId: data.get("capItemId"),
+    labelItemId: data.get("labelItemId"),
+    availableQty: Math.max(0, parseDecimalInput(data.get("availableQty")) || 0)
+  };
+}
+
+function saveProductEdit(event, id) {
+  event.preventDefault();
+  const index = state.products.findIndex((item) => item.id === id);
+  if (index < 0) return;
+  const previous = state.products[index];
+  const updated = productFromFormData(new FormData(event.currentTarget), id);
+  adjustPackagingForProduct(previous, 1);
+  if (!hasEnoughPackagingForProduct(updated)) {
+    adjustPackagingForProduct(previous, -1);
+    alert("Zaloga izbrane embalaze ne zadosca za to spremembo izdelka.");
+    return;
+  }
+  adjustPackagingForProduct(updated, -1);
+  state.products[index] = updated;
+  productEditingId = null;
+  saveState();
+  renderAll();
 }
 
 function deleteProduct(id) {
@@ -1945,12 +2067,13 @@ function addOrderLine(line = defaultOrderLine()) {
 }
 
 function defaultOrderLine() {
+  const product = activeProducts()[0];
   return {
-    productId: state.products[0]?.id ?? "",
+    productId: product?.id ?? "",
     productQty: 1,
     packageItemId: packagingByType("Paket")[0]?.id ?? "",
     packageQty: 1,
-    offeredPrice: 0
+    offeredPrice: ""
   };
 }
 
@@ -1971,7 +2094,7 @@ function renderOrderLines() {
     const price = template.querySelector(".order-price");
     const calc = orderLineCalculation(line, orderMarginValue());
 
-    productSelect.innerHTML = state.products.map((product) =>
+    productSelect.innerHTML = activeProducts().map((product) =>
       `<option value="${product.id}" ${product.id === line.productId ? "selected" : ""}>${product.name} (${number(product.availableQty, 0)} kos)</option>`
     ).join("") || `<option value="">Najprej ustvari izdelek</option>`;
     packageSelect.innerHTML = packagingByType("Paket").map((item) =>
@@ -1980,7 +2103,7 @@ function renderOrderLines() {
     productQty.value = line.productQty || "";
     packageQty.value = line.packageQty ?? 1;
     suggestedPrice.value = `${money(calc.suggestedPrice)} predlog`;
-    price.value = line.offeredPrice ? roundMoney(line.offeredPrice).toFixed(2) : "";
+    price.value = hasManualOrderPrice(line) ? roundMoney(line.offeredPrice).toFixed(2) : "";
     price.placeholder = calc.suggestedPrice ? `${roundMoney(calc.suggestedPrice).toFixed(2)} predlog` : "Ponujena cena";
 
     productSelect.addEventListener("change", (event) => updateOrderDraftLine(index, "productId", event.target.value));
@@ -1993,10 +2116,14 @@ function renderOrderLines() {
       updateOrderDraftLine(index, "packageQty", parseDecimalInput(event.target.value));
       updateOrderLineSuggestion(index);
     });
-    price.addEventListener("input", (event) => updateOrderDraftLine(index, "offeredPrice", parseDecimalInput(event.target.value)));
+    price.addEventListener("input", (event) => {
+      const value = event.target.value.trim();
+      updateOrderDraftLine(index, "offeredPrice", value === "" ? "" : parseDecimalInput(value));
+    });
     price.addEventListener("change", (event) => {
-      orderDraftLines[index].offeredPrice = roundMoney(event.target.value);
-      event.target.value = orderDraftLines[index].offeredPrice ? orderDraftLines[index].offeredPrice.toFixed(2) : "";
+      const value = event.target.value.trim();
+      orderDraftLines[index].offeredPrice = value === "" ? "" : roundMoney(value);
+      event.target.value = hasManualOrderPrice(orderDraftLines[index]) ? orderDraftLines[index].offeredPrice.toFixed(2) : "";
     });
     template.querySelector(".order-remove").addEventListener("click", () => {
       orderDraftLines.splice(index, 1);
@@ -2037,6 +2164,10 @@ function orderMarginValue() {
   return parseDecimalInput(document.querySelector("#orderForm")?.margin?.value) || 0;
 }
 
+function hasManualOrderPrice(line) {
+  return line.offeredPrice !== "" && line.offeredPrice !== null && line.offeredPrice !== undefined && !Number.isNaN(Number(line.offeredPrice));
+}
+
 function orderLineCalculation(line, marginOverride) {
   const product = state.products.find((item) => item.id === line.productId);
   const packageItem = packagingById(line.packageItemId);
@@ -2047,7 +2178,7 @@ function orderLineCalculation(line, marginOverride) {
   const packageCost = (packageItem?.price ?? 0) * packageQty;
   const baseCost = productUnitCost * productQty + packageCost;
   const suggestedPrice = roundMoney(productUnitCost * productQty * (1 + margin / 100) + packageCost);
-  const offeredPrice = roundMoney(line.offeredPrice || suggestedPrice);
+  const offeredPrice = roundMoney(hasManualOrderPrice(line) ? line.offeredPrice : suggestedPrice);
   return { product, packageItem, productQty, packageQty, margin, productUnitCost, packageCost, baseCost, suggestedPrice, offeredPrice };
 }
 
@@ -2069,6 +2200,26 @@ function normalizeOrderLines(lines, margin) {
     });
 }
 
+function orderProductStockIssues(lines) {
+  const requested = new Map();
+  lines.forEach((line) => {
+    requested.set(line.productId, (requested.get(line.productId) || 0) + Number(line.productQty || 0));
+  });
+  return [...requested.entries()]
+    .map(([productId, qty]) => {
+      const product = state.products.find((item) => item.id === productId);
+      const available = Number(product?.availableQty || 0);
+      return { product, qty, available };
+    })
+    .filter(({ product, qty, available }) => !product || qty > available);
+}
+
+function productStockWarning(issues) {
+  return issues.map(({ product, qty, available }) =>
+    `${product?.name ?? "Izdelek"}: izbrano ${number(qty, 0)} kos, na voljo ${number(available, 0)} kos`
+  ).join("\n");
+}
+
 function saveOrder(event) {
   event.preventDefault();
   const data = new FormData(event.currentTarget);
@@ -2076,6 +2227,11 @@ function saveOrder(event) {
   const lines = normalizeOrderLines(orderDraftLines, margin);
   if (!lines.length) {
     alert("Dodaj vsaj eno postavko narocila.");
+    return;
+  }
+  const stockIssues = orderProductStockIssues(lines);
+  if (stockIssues.length) {
+    alert(`Premajhna zaloga izdelkov:\n\n${productStockWarning(stockIssues)}`);
     return;
   }
   state.orders.unshift({
@@ -2162,6 +2318,14 @@ function adjustStockForOrder(order, direction) {
 function toggleOrderPaid(id, paid) {
   const order = state.orders.find((item) => item.id === id);
   if (!order || order.paid === paid) return;
+  if (paid) {
+    const stockIssues = orderProductStockIssues(order.lines);
+    if (stockIssues.length) {
+      alert(`Narocila ni mogoce oznaciti kot placano, ker je zaloga izdelkov prenizka:\n\n${productStockWarning(stockIssues)}`);
+      renderAll();
+      return;
+    }
+  }
   adjustStockForOrder(order, paid ? -1 : 1);
   order.paid = paid;
   saveState();
